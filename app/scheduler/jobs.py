@@ -76,13 +76,12 @@ def ping_project(project_id: int, url: str):
             supabase.table("projects")
             .select("name, baseline_response_ms")
             .eq("id", project_id)
-            .maybe_single()
             .execute()
         )
-        if project_result is None or project_result.data is None:
+        if not project_result.data:
             logger.warning("[ping] Project %s not found — skipping", project_id)
             return
-        project = project_result.data
+        project = project_result.data[0]
         baseline_ms: Optional[int] = project.get("baseline_response_ms")
         project_name: str = project.get("name", str(project_id))
 
@@ -203,6 +202,57 @@ def ping_project(project_id: int, url: str):
         logger.exception("[ping] Unexpected error pinging project %s (%s)", project_id, url)
 
 
+_warmup_active_users: set[str] = set()
+
+
+def _set_user_project_intervals(user_id: str, interval_minutes: int) -> None:
+    projects_result = (
+        supabase.table("projects")
+        .select("id, url")
+        .eq("is_active", True)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    for project in projects_result.data:
+        schedule_project(project["id"], project["url"], interval_minutes=interval_minutes)
+
+
+def _check_user_warmup(user: dict) -> None:
+    global _warmup_active_users
+    user_id: str = user["id"]
+    try:
+        from app.google_calendar import get_matching_events, get_warmup_settings, is_connected
+        if not is_connected(user):
+            _warmup_active_users.discard(user_id)
+            return
+        cfg = get_warmup_settings(user_id)
+        if not cfg.get("warmup_enabled", True):
+            _warmup_active_users.discard(user_id)
+            return
+        events = get_matching_events(user)
+        was_active = user_id in _warmup_active_users
+        if events and not was_active:
+            titles = ", ".join(e.get("summary", "event") for e in events)
+            logger.info("[calendar] User %s: '%s' starting soon — warming up projects", user_id, titles)
+            _warmup_active_users.add(user_id)
+            _set_user_project_intervals(user_id, interval_minutes=1)
+        elif not events and was_active:
+            logger.info("[calendar] User %s: no more upcoming events — resetting intervals", user_id)
+            _warmup_active_users.discard(user_id)
+            _set_user_project_intervals(user_id, interval_minutes=5)
+    except Exception:
+        logger.exception("[calendar] Error checking warmup for user %s", user_id)
+
+
+def check_calendar_and_warmup() -> None:
+    try:
+        users_result = supabase.table("users").select("*").execute()
+        for user in users_result.data:
+            _check_user_warmup(user)
+    except Exception:
+        logger.exception("[calendar] Error in calendar warmup check")
+
+
 def schedule_project(project_id: int, url: str, interval_minutes: int = 5):
     """Schedule (or reschedule) a ping job for a project."""
     if scheduler is None:
@@ -235,5 +285,14 @@ async def start_scheduler() -> AsyncIOScheduler:
     logger.info("Scheduler starting — found %d active projects", len(projects_result.data))
     for project in projects_result.data:
         schedule_project(project["id"], project["url"])
+
+    scheduler.add_job(
+        check_calendar_and_warmup,
+        trigger="interval",
+        minutes=15,
+        id="check_calendar",
+        replace_existing=True,
+    )
+    logger.info("Scheduled calendar warmup check every 15m")
 
     return scheduler

@@ -2,8 +2,9 @@
 
 from typing import List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.auth import get_current_user
 from app.database import supabase
 from app.models import PingResponse
 
@@ -11,8 +12,17 @@ router = APIRouter(prefix="/projects", tags=["pings"])
 
 
 @router.get("/{project_id}/pings", response_model=List[PingResponse])
-def list_pings(project_id: str):
-    """Return the last 50 pings for a project, newest first."""
+def list_pings(project_id: str, current_user: dict = Depends(get_current_user)):
+    proj = (
+        supabase.table("projects")
+        .select("id")
+        .eq("id", project_id)
+        .eq("user_id", current_user["id"])
+        .execute()
+    )
+    if not proj.data:
+        raise HTTPException(status_code=404, detail="Project not found")
+
     result = (
         supabase.table("pings")
         .select("*")

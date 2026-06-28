@@ -1,5 +1,12 @@
 export type Platform = "render" | "railway" | "fly" | "other";
 
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  avatar_url: string | null;
+}
+
 export interface Project {
   id: string;
   name: string;

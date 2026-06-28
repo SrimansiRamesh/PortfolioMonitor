@@ -10,7 +10,7 @@ logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 
-from app.routers import incidents, pings, projects
+from app.routers import auth, calendar, incidents, pings, projects
 from app.scheduler.jobs import start_scheduler
 
 app = FastAPI(title="portfolio-monitor")
@@ -22,9 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(pings.router)
 app.include_router(incidents.router)
+app.include_router(calendar.router)
 
 
 @app.get("/health")

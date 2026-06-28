@@ -20,6 +20,12 @@ class ProjectCreate(BaseModel):
     platform: Platform
 
 
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    platform: Optional[Platform] = None
+
+
 class ProjectResponse(BaseModel):
     id: str
     name: str

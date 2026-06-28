@@ -2,17 +2,19 @@
 
 import { useState } from "react";
 import { ExternalLink, RotateCcw, Trash2 } from "lucide-react";
-import { ProjectWithPings } from "../lib/types";
+import { Project, ProjectWithPings } from "../lib/types";
 import StatusBadge from "./StatusBadge";
 import PlatformPill from "./PlatformPill";
 import Sparkline from "./Sparkline";
 import ConfirmDeleteModal from "./ConfirmDeleteModal";
+import EditProjectModal from "./EditProjectModal";
 import { deleteProject, restartMonitoring } from "../lib/api";
 
 interface Props {
   project: ProjectWithPings;
   onDeleted: (id: string) => void;
   onRestarted: (id: string) => void;
+  onEdited: (project: Project) => void;
 }
 
 const STATUS_BORDER: Record<string, string> = {
@@ -33,8 +35,9 @@ function timeAgo(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export default function ProjectCard({ project, onDeleted, onRestarted }: Props) {
+export default function ProjectCard({ project, onDeleted, onRestarted, onEdited }: Props) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [loadingRestart, setLoadingRestart] = useState(false);
   const [loadingDelete, setLoadingDelete] = useState(false);
 
@@ -44,7 +47,8 @@ export default function ProjectCard({ project, onDeleted, onRestarted }: Props) 
   const slow = responseMs !== null && responseMs > 1000;
   const accentBorder = (classification && STATUS_BORDER[classification]) || "#2D3154";
 
-  async function handleRestart() {
+  async function handleRestart(e: React.MouseEvent) {
+    e.stopPropagation();
     setLoadingRestart(true);
     try { await restartMonitoring(project.id); onRestarted(project.id); }
     finally { setLoadingRestart(false); }
@@ -59,13 +63,14 @@ export default function ProjectCard({ project, onDeleted, onRestarted }: Props) 
   return (
     <>
       <div
-        className="rounded-xl flex flex-col overflow-hidden"
+        className="rounded-xl flex flex-col overflow-hidden cursor-pointer"
         style={{
           background: "#1A1D2E",
           border: "1px solid #2D3154",
           borderLeft: `3px solid ${accentBorder}`,
           minHeight: 280,
         }}
+        onClick={() => setShowEditModal(true)}
       >
         {/* Body */}
         <div className="flex flex-col gap-4 p-5 flex-1">
@@ -76,9 +81,19 @@ export default function ProjectCard({ project, onDeleted, onRestarted }: Props) 
               <h3 className="text-[16px] font-semibold truncate" style={{ color: "#F0F2FF" }}>
                 {project.name}
               </h3>
-              <p className="text-[12px] truncate mt-0.5" style={{ color: "#8B8FA8" }}>
+              <a
+                href={project.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-[12px] truncate mt-0.5 transition-colors hover:underline"
+                style={{ color: "#8B8FA8" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#6366F1")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#8B8FA8")}
+              >
                 {project.url}
-              </p>
+                <ExternalLink size={10} style={{ flexShrink: 0 }} />
+              </a>
             </div>
             <PlatformPill platform={project.platform} />
           </div>
@@ -138,27 +153,9 @@ export default function ProjectCard({ project, onDeleted, onRestarted }: Props) 
             <RotateCcw size={12} className={loadingRestart ? "animate-spin" : ""} />
             Restart
           </button>
-          <a
-            href={project.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors"
-            style={{ background: "#2D3154", color: "#8B8FA8" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(99,102,241,0.15)";
-              e.currentTarget.style.color = "#6366F1";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "#2D3154";
-              e.currentTarget.style.color = "#8B8FA8";
-            }}
-          >
-            <ExternalLink size={12} />
-            Visit
-          </a>
           <div className="flex-1" />
           <button
-            onClick={() => setShowDeleteModal(true)}
+            onClick={(e) => { e.stopPropagation(); setShowDeleteModal(true); }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors"
             style={{ background: "#2D3154", color: "#8B8FA8" }}
             onMouseEnter={(e) => {
@@ -182,6 +179,13 @@ export default function ProjectCard({ project, onDeleted, onRestarted }: Props) 
         loading={loadingDelete}
         onConfirm={handleConfirmDelete}
         onCancel={() => setShowDeleteModal(false)}
+      />
+
+      <EditProjectModal
+        open={showEditModal}
+        project={project}
+        onClose={() => setShowEditModal(false)}
+        onUpdated={onEdited}
       />
     </>
   );
