@@ -2,15 +2,15 @@
 
 import base64
 import hashlib
-import json
 import logging
 import os
 import secrets
-import tempfile
+from datetime import datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends
 from fastapi.responses import RedirectResponse
+from jose import JWTError, jwt
 
 from app.auth import create_access_token, get_current_user
 from app.config import settings
@@ -23,36 +23,7 @@ os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# File-backed PKCE store — survives --reload restarts
-_PKCE_FILE = os.path.join(tempfile.gettempdir(), "pm_pkce.json")
-
-
-def _pkce_set(state: str, verifier: str) -> None:
-    try:
-        store: dict = {}
-        if os.path.exists(_PKCE_FILE):
-            with open(_PKCE_FILE) as f:
-                store = json.load(f)
-        store[state] = verifier
-        with open(_PKCE_FILE, "w") as f:
-            json.dump(store, f)
-    except Exception:
-        logger.exception("Failed to write PKCE store")
-
-
-def _pkce_pop(state: str) -> str | None:
-    try:
-        if not os.path.exists(_PKCE_FILE):
-            return None
-        with open(_PKCE_FILE) as f:
-            store = json.load(f)
-        verifier = store.pop(state, None)
-        with open(_PKCE_FILE, "w") as f:
-            json.dump(store, f)
-        return verifier
-    except Exception:
-        logger.exception("Failed to read PKCE store")
-        return None
+ALGORITHM = "HS256"
 
 
 def _make_verifier() -> str:
@@ -62,6 +33,25 @@ def _make_verifier() -> str:
 def _make_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode()).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+def _encode_state(verifier: str) -> str:
+    """Pack the PKCE verifier into a signed, 10-minute JWT used as the OAuth state."""
+    payload = {
+        "verifier": verifier,
+        "exp": datetime.utcnow() + timedelta(minutes=10),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=ALGORITHM)
+
+
+def _decode_state(state: str) -> str | None:
+    """Extract the verifier from the state JWT. Returns None if invalid or expired."""
+    try:
+        payload = jwt.decode(state, settings.JWT_SECRET, algorithms=[ALGORITHM])
+        return payload["verifier"]
+    except (JWTError, KeyError):
+        return None
+
 
 SCOPES = [
     "openid",
@@ -96,13 +86,17 @@ def google_auth():
     flow = _make_flow()
     verifier = _make_verifier()
     challenge = _make_challenge(verifier)
-    auth_url, state = flow.authorization_url(
+
+    # Embed verifier in the state parameter — no server-side storage needed
+    state_token = _encode_state(verifier)
+
+    auth_url, _ = flow.authorization_url(
         access_type="offline",
         prompt="consent",
         code_challenge=challenge,
         code_challenge_method="S256",
+        state=state_token,
     )
-    _pkce_set(state, verifier)
     return {"auth_url": auth_url}
 
 
@@ -112,8 +106,12 @@ def google_callback(code: str = "", state: str = "", error: str = ""):
     if error or not code:
         return RedirectResponse(url=f"{settings.FRONTEND_URL}?auth=error")
     try:
+        verifier = _decode_state(state)
+        if not verifier:
+            logger.warning("OAuth callback: invalid or expired state token")
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}?auth=error")
+
         flow = _make_flow()
-        verifier = _pkce_pop(state)
         flow.fetch_token(code=code, code_verifier=verifier)
         creds = flow.credentials
 

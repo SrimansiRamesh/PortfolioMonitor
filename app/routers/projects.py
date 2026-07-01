@@ -22,13 +22,14 @@ async def create_project(
         "name": project.name,
         "url": project.url,
         "platform": project.platform.value,
+        "ping_interval_minutes": project.ping_interval_minutes,
         "user_id": current_user["id"],
     }
     result = supabase.table("projects").insert(payload).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create project")
     created = result.data[0]
-    schedule_project(created["id"], created["url"])
+    schedule_project(created["id"], created["url"], interval_minutes=created["ping_interval_minutes"])
     return created
 
 
@@ -79,8 +80,8 @@ def update_project(
     if not result.data:
         raise HTTPException(status_code=404, detail="Project not found")
     updated = result.data[0]
-    if "url" in payload:
-        schedule_project(project_id, updated["url"])
+    if "url" in payload or "ping_interval_minutes" in payload:
+        schedule_project(project_id, updated["url"], interval_minutes=updated["ping_interval_minutes"])
     return updated
 
 
@@ -102,7 +103,7 @@ def delete_project(project_id: str, current_user: dict = Depends(get_current_use
 def restart_project(project_id: str, current_user: dict = Depends(get_current_user)):
     result = (
         supabase.table("projects")
-        .select("url")
+        .select("url, ping_interval_minutes")
         .eq("id", project_id)
         .eq("user_id", current_user["id"])
         .execute()
@@ -110,8 +111,8 @@ def restart_project(project_id: str, current_user: dict = Depends(get_current_us
     if not result.data:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    url = result.data[0]["url"]
-    schedule_project(project_id, url, interval_minutes=5)
+    project = result.data[0]
+    schedule_project(project_id, project["url"], interval_minutes=project.get("ping_interval_minutes", 5))
 
     open_incident = (
         supabase.table("incidents")

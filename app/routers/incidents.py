@@ -98,7 +98,7 @@ def restart_by_incident(incident_id: str, current_user: dict = Depends(get_curre
 
     project_result = (
         supabase.table("projects")
-        .select("url")
+        .select("url, ping_interval_minutes")
         .eq("id", project_id)
         .execute()
     )
@@ -109,5 +109,6 @@ def restart_by_incident(incident_id: str, current_user: dict = Depends(get_curre
         {"closed_at": datetime.utcnow().isoformat()}
     ).eq("id", incident_id).execute()
 
-    schedule_project(project_id, project_result.data[0]["url"], interval_minutes=5)
+    p = project_result.data[0]
+    schedule_project(project_id, p["url"], interval_minutes=p.get("ping_interval_minutes", 5))
     return {"status": "restarted"}

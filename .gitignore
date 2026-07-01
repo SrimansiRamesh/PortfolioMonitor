@@ -25,3 +25,6 @@ ENV/
 .env
 .env.local
 project-monitor/
+
+# AI context file — local only
+CLAUDE.md

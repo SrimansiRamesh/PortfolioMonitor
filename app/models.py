@@ -18,12 +18,14 @@ class ProjectCreate(BaseModel):
     name: str
     url: str
     platform: Platform
+    ping_interval_minutes: int = 5
 
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
     platform: Optional[Platform] = None
+    ping_interval_minutes: Optional[int] = None
 
 
 class ProjectResponse(BaseModel):
@@ -31,6 +33,7 @@ class ProjectResponse(BaseModel):
     name: str
     url: str
     platform: Platform
+    ping_interval_minutes: int = 5
     baseline_response_ms: Optional[int] = None
     is_active: bool
     created_at: datetime

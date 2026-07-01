@@ -50,6 +50,7 @@ export async function createProject(payload: {
   name: string;
   url: string;
   platform: string;
+  ping_interval_minutes: number;
 }): Promise<Project> {
   const { data } = await client.post<Project>("/projects", payload);
   return data;
@@ -57,7 +58,7 @@ export async function createProject(payload: {
 
 export async function updateProject(
   projectId: string,
-  payload: { name?: string; url?: string; platform?: string }
+  payload: { name?: string; url?: string; platform?: string; ping_interval_minutes?: number }
 ): Promise<Project> {
   const { data } = await client.patch<Project>(`/projects/${projectId}`, payload);
   return data;

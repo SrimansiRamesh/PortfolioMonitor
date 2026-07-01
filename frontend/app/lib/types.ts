@@ -12,6 +12,7 @@ export interface Project {
   name: string;
   url: string;
   platform: Platform;
+  ping_interval_minutes: number;
   baseline_response_ms: number | null;
   is_active: boolean;
   created_at: string;

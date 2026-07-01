@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { createProject } from "../lib/api";
 import { Platform, Project } from "../lib/types";
+import IntervalInput from "./IntervalInput";
 
 interface Props {
   open: boolean;
@@ -22,11 +23,12 @@ export default function AddProjectModal({ open, onClose, onCreated }: Props) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [platform, setPlatform] = useState<Platform>("render");
+  const [pingInterval, setPingInterval] = useState(5);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) { setName(""); setUrl(""); setPlatform("render"); setError(null); }
+    if (open) { setName(""); setUrl(""); setPlatform("render"); setPingInterval(5); setError(null); }
   }, [open]);
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export default function AddProjectModal({ open, onClose, onCreated }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const project = await createProject({ name: name.trim(), url: url.trim(), platform });
+      const project = await createProject({ name: name.trim(), url: url.trim(), platform, ping_interval_minutes: pingInterval });
       onCreated(project);
       onClose();
     } catch (err: any) {
@@ -116,6 +118,11 @@ export default function AddProjectModal({ open, onClose, onCreated }: Props) {
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
             </select>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-medium" style={{ color: "#8B8FA8" }}>Ping every</label>
+            <IntervalInput valueMinutes={pingInterval} onChange={setPingInterval} />
           </div>
 
           {error && <p className="text-[13px]" style={{ color: "#EF4444" }}>{error}</p>}

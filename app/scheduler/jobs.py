@@ -33,9 +33,11 @@ def _classify_ping(
     return "healthy"
 
 
-def compute_next_interval_minutes(consecutive_failures: int) -> int:
-    """Exponential backoff capped at 60 minutes."""
-    interval = 5 * (2 ** (consecutive_failures - 1))
+def compute_next_interval_minutes(consecutive_failures: int, base_interval: int = 5) -> int:
+    """Exponential backoff from base_interval, capped at 60m. Skipped for long-interval projects."""
+    if base_interval >= 60:
+        return base_interval  # already infrequent — no backoff needed
+    interval = base_interval * (2 ** (consecutive_failures - 1))
     return min(interval, 60)
 
 
@@ -74,7 +76,7 @@ def ping_project(project_id: int, url: str):
         # Step 2: Fetch project name and baseline
         project_result = (
             supabase.table("projects")
-            .select("name, baseline_response_ms")
+            .select("name, baseline_response_ms, ping_interval_minutes")
             .eq("id", project_id)
             .execute()
         )
@@ -84,6 +86,7 @@ def ping_project(project_id: int, url: str):
         project = project_result.data[0]
         baseline_ms: Optional[int] = project.get("baseline_response_ms")
         project_name: str = project.get("name", str(project_id))
+        base_interval: int = project.get("ping_interval_minutes") or 5
 
         # Step 3: Classify
         classification = _classify_ping(status_code, response_time_ms, baseline_ms)
@@ -171,7 +174,7 @@ def ping_project(project_id: int, url: str):
                         logger.exception("[alert] Failed to send incident alert for project %s", project_id)
 
             consecutive_failures = _count_consecutive_failures(project_id)
-            next_interval = compute_next_interval_minutes(consecutive_failures)
+            next_interval = compute_next_interval_minutes(consecutive_failures, base_interval=base_interval)
             schedule_project(project_id, url, interval_minutes=next_interval)
         else:
             open_incident = (
@@ -193,7 +196,7 @@ def ping_project(project_id: int, url: str):
                     send_recovery_alert(project_name, duration_minutes)
                 except Exception:
                     logger.exception("[alert] Failed to send recovery alert for project %s", project_id)
-                schedule_project(project_id, url, interval_minutes=5)
+                schedule_project(project_id, url, interval_minutes=base_interval)
 
         # Step 8: Log
         logger.info("[ping] %s — %s — %sms", project_name, classification, response_time_ms)
@@ -205,16 +208,18 @@ def ping_project(project_id: int, url: str):
 _warmup_active_users: set[str] = set()
 
 
-def _set_user_project_intervals(user_id: str, interval_minutes: int) -> None:
+def _set_user_project_intervals(user_id: str, interval_minutes: Optional[int] = None) -> None:
+    """Set all user projects to interval_minutes. If None, restore each project's configured interval."""
     projects_result = (
         supabase.table("projects")
-        .select("id, url")
+        .select("id, url, ping_interval_minutes")
         .eq("is_active", True)
         .eq("user_id", user_id)
         .execute()
     )
     for project in projects_result.data:
-        schedule_project(project["id"], project["url"], interval_minutes=interval_minutes)
+        mins = interval_minutes if interval_minutes is not None else (project.get("ping_interval_minutes") or 5)
+        schedule_project(project["id"], project["url"], interval_minutes=mins)
 
 
 def _check_user_warmup(user: dict) -> None:
@@ -239,7 +244,7 @@ def _check_user_warmup(user: dict) -> None:
         elif not events and was_active:
             logger.info("[calendar] User %s: no more upcoming events — resetting intervals", user_id)
             _warmup_active_users.discard(user_id)
-            _set_user_project_intervals(user_id, interval_minutes=5)
+            _set_user_project_intervals(user_id)  # restores each project's configured interval
     except Exception:
         logger.exception("[calendar] Error checking warmup for user %s", user_id)
 
@@ -280,11 +285,11 @@ async def start_scheduler() -> AsyncIOScheduler:
     logger.info("Scheduler started")
 
     projects_result = (
-        supabase.table("projects").select("id, url").eq("is_active", True).execute()
+        supabase.table("projects").select("id, url, ping_interval_minutes").eq("is_active", True).execute()
     )
     logger.info("Scheduler starting — found %d active projects", len(projects_result.data))
     for project in projects_result.data:
-        schedule_project(project["id"], project["url"])
+        schedule_project(project["id"], project["url"], interval_minutes=project.get("ping_interval_minutes") or 5)
 
     scheduler.add_job(
         check_calendar_and_warmup,

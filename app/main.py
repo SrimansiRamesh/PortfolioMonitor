@@ -15,9 +15,15 @@ from app.scheduler.jobs import start_scheduler
 
 app = FastAPI(title="portfolio-monitor")
 
+from app.config import settings
+
+_origins = ["http://localhost:3000"]
+if settings.FRONTEND_URL and settings.FRONTEND_URL not in _origins:
+    _origins.append(settings.FRONTEND_URL)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
