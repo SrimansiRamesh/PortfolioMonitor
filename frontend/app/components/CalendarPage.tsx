@@ -57,22 +57,12 @@ function fmtLabel(h: number): string {
 function fmtHeaderRange(days: Date[]): string {
   const a = days[0];
   const b = days[days.length - 1];
-  if (days.length === 1) {
-    return a.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  }
   if (a.getMonth() === b.getMonth()) {
     return a.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   }
   const am = a.toLocaleDateString(undefined, { month: "short" });
   const bm = b.toLocaleDateString(undefined, { month: "short", year: "numeric" });
   return `${am} – ${bm}`;
-}
-
-function getStartForToday(daysToShow: number): Date {
-  if (daysToShow === 7) return getMondayOf(new Date());
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function eventColor(e: CalendarEvent): string {
@@ -157,19 +147,12 @@ function EventPopover({
       <div className="px-4 pt-3 pb-2" style={{ borderBottom: "1px solid #2D3154" }}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span
-              className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
-              style={{ background: color }}
-            />
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ background: color }} />
             <p className="text-[13px] font-semibold leading-tight" style={{ color: "#F0F2FF" }}>
               {event.title}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="shrink-0 p-0.5 rounded hover:opacity-70"
-            style={{ color: "#8B8FA8" }}
-          >
+          <button onClick={onClose} className="shrink-0 p-0.5 rounded hover:opacity-70" style={{ color: "#8B8FA8" }}>
             <X size={13} />
           </button>
         </div>
@@ -188,7 +171,7 @@ function EventPopover({
   );
 }
 
-// ── EventBlock ────────────────────────────────────────────────────────────────
+// ── EventBlock (grid view) ────────────────────────────────────────────────────
 
 function EventBlock({ event }: { event: CalendarEvent }) {
   const pos = positionEvent(event);
@@ -215,10 +198,7 @@ function EventBlock({ event }: { event: CalendarEvent }) {
         onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
         onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
       >
-        <p
-          className="text-[11px] font-medium leading-tight truncate"
-          style={{ color }}
-        >
+        <p className="text-[11px] font-medium leading-tight truncate" style={{ color }}>
           {event.title}
         </p>
         {pos.height > 30 && (
@@ -227,32 +207,114 @@ function EventBlock({ event }: { event: CalendarEvent }) {
           </p>
         )}
       </div>
-      {open && (
-        <EventPopover event={event} anchorRef={ref} onClose={() => setOpen(false)} />
-      )}
+      {open && <EventPopover event={event} anchorRef={ref} onClose={() => setOpen(false)} />}
     </>
+  );
+}
+
+// ── EventRow (stack view) ─────────────────────────────────────────────────────
+
+function EventRow({ event }: { event: CalendarEvent }) {
+  const color = eventColor(event);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  return (
+    <>
+      <div
+        ref={ref}
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-lg px-2.5 py-2 cursor-pointer"
+        style={{ background: `${color}15`, borderLeft: `2px solid ${color}` }}
+      >
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] font-semibold truncate leading-tight" style={{ color }}>
+            {event.title}
+          </p>
+          {!event.all_day && (
+            <p className="text-[10px] mt-0.5 leading-tight" style={{ color: `${color}99` }}>
+              {fmtTime(event.start)} – {fmtTime(event.end)}
+            </p>
+          )}
+          {event.all_day && (
+            <p className="text-[10px] mt-0.5 leading-tight" style={{ color: `${color}99` }}>All day</p>
+          )}
+        </div>
+      </div>
+      {open && <EventPopover event={event} anchorRef={ref} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+// ── StackDaySection ───────────────────────────────────────────────────────────
+
+function StackDaySection({ day, events, todayStr }: { day: Date; events: CalendarEvent[]; todayStr: string }) {
+  const isToday = dateStr(day) === todayStr;
+  const timedEvents = eventsForDay(events, day).sort(
+    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+  );
+  const allDay = allDayForDay(events, day);
+  const allEvents = [...allDay, ...timedEvents];
+
+  return (
+    <div
+      className="mx-3 mb-2 rounded-2xl overflow-hidden"
+      style={{
+        background: isToday ? "rgba(99,102,241,0.08)" : "#1A1D2E",
+        border: `1px solid ${isToday ? "rgba(99,102,241,0.25)" : "#2D3154"}`,
+        minHeight: 72,
+      }}
+    >
+      <div className="flex items-stretch gap-3 p-3">
+        {/* Day pill */}
+        <div
+          className="w-12 shrink-0 rounded-xl flex flex-col items-center justify-center py-2.5 gap-0.5"
+          style={{ background: isToday ? "#6366F1" : "#13162A" }}
+        >
+          <span
+            className="text-[9px] font-bold uppercase tracking-widest"
+            style={{ color: isToday ? "rgba(255,255,255,0.65)" : "#8B8FA8" }}
+          >
+            {DAY_LABELS[(day.getDay() + 6) % 7]}
+          </span>
+          <span
+            className="text-[22px] font-bold leading-none"
+            style={{ color: isToday ? "#fff" : "#F0F2FF" }}
+          >
+            {day.getDate()}
+          </span>
+        </div>
+
+        {/* Events area */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
+          {allEvents.length === 0 ? (
+            <p className="text-[12px]" style={{ color: "#3a3f6b" }}>No events</p>
+          ) : (
+            allEvents.map((e) => <EventRow key={e.id} event={e} />)
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
 // ── CalendarPage ──────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
+  // viewMode: 'stack' on mobile, 'grid' on tablet/desktop
+  const [viewMode, setViewMode] = useState<"stack" | "grid">(() => {
+    if (typeof window !== "undefined") return window.innerWidth < 640 ? "stack" : "grid";
+    return "grid";
+  });
   const [daysToShow, setDaysToShow] = useState(() => {
     if (typeof window !== "undefined") {
-      return window.innerWidth < 640 ? 1 : window.innerWidth < 1024 ? 3 : 7;
+      const w = window.innerWidth;
+      return w >= 1024 ? 7 : 3;
     }
     return 7;
   });
 
-  const [startDate, setStartDate] = useState(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 640) {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-      return d;
-    }
-    return getMondayOf(new Date());
-  });
-
+  const [startDate, setStartDate] = useState(() => getMondayOf(new Date()));
   const [showSidebar, setShowSidebar] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -263,17 +325,20 @@ export default function CalendarPage() {
   const [customKw, setCustomKw] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Responsive day count
   useEffect(() => {
     function update() {
       const w = window.innerWidth;
-      setDaysToShow(w < 640 ? 1 : w < 1024 ? 3 : 7);
+      setViewMode(w < 640 ? "stack" : "grid");
+      setDaysToShow(w >= 1024 ? 7 : 3);
     }
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, []);
 
-  const days = Array.from({ length: daysToShow }, (_, i) => addDays(startDate, i));
+  // Stack always shows full 7-day week; grid shows daysToShow days
+  const days = Array.from({ length: viewMode === "stack" ? 7 : daysToShow }, (_, i) => addDays(startDate, i));
+
+  const step = viewMode === "stack" ? 7 : daysToShow;
 
   const loadStatus = useCallback(async () => {
     try {
@@ -297,22 +362,22 @@ export default function CalendarPage() {
     } finally {
       setLoading(false);
     }
-  }, [startDate, daysToShow]);
+  }, [startDate, viewMode, daysToShow]);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
   useEffect(() => { loadEvents(); }, [loadEvents]);
 
-  // Current-time indicator
+  // Current-time indicator (grid only)
   const now = new Date();
   const nowTop = (now.getHours() + now.getMinutes() / 60 - START_HOUR) * HOUR_PX;
   const showNow = nowTop >= 0 && nowTop <= TOTAL_PX;
   const todayStr = dateStr(now);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (scrollRef.current && showNow) {
+    if (scrollRef.current && showNow && viewMode === "grid") {
       scrollRef.current.scrollTop = Math.max(0, nowTop - 120);
     }
-  }, []);
+  }, [viewMode]);
 
   async function toggleWarmup() {
     const next = !warmupEnabled;
@@ -345,10 +410,10 @@ export default function CalendarPage() {
 
   const hasAllDay = days.some((d) => allDayForDay(events, d).length > 0);
 
-  // ── Sidebar content (shared between inline and overlay) ──
+  // ── Shared sidebar content ────────────────────────────────────────────────
+
   const sidebarContent = (
     <>
-      {/* Header with close on mobile */}
       <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid #2D3154" }}>
         <div className="flex items-center justify-between mb-3">
           <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#8B8FA8" }}>
@@ -362,8 +427,6 @@ export default function CalendarPage() {
             <X size={14} />
           </button>
         </div>
-
-        {/* Toggle row */}
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[13px] font-medium" style={{ color: "#F0F2FF" }}>Auto warmup</p>
@@ -386,11 +449,8 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Minutes before */}
       <div className="px-4 py-3" style={{ borderBottom: "1px solid #2D3154", opacity: warmupEnabled && connected ? 1 : 0.4 }}>
-        <p className="text-[11px] font-medium mb-2" style={{ color: "#8B8FA8" }}>
-          Warm up how early
-        </p>
+        <p className="text-[11px] font-medium mb-2" style={{ color: "#8B8FA8" }}>Warm up how early</p>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -400,19 +460,12 @@ export default function CalendarPage() {
             disabled={!warmupEnabled || !connected}
             onChange={(e) => setMinutesBefore(Number(e.target.value))}
             className="w-16 rounded-lg px-2 py-1.5 text-[13px]"
-            style={{
-              background: "#1A1D2E",
-              border: "1px solid #2D3154",
-              color: "#F0F2FF",
-              outline: "none",
-              caretColor: "#6366F1",
-            }}
+            style={{ background: "#1A1D2E", border: "1px solid #2D3154", color: "#F0F2FF", outline: "none", caretColor: "#6366F1" }}
           />
           <span className="text-[12px]" style={{ color: "#8B8FA8" }}>min before</span>
         </div>
       </div>
 
-      {/* Keywords */}
       <div className="px-4 py-3" style={{ borderBottom: "1px solid #2D3154", opacity: warmupEnabled && connected ? 1 : 0.4 }}>
         <p className="text-[11px] font-medium mb-2" style={{ color: "#8B8FA8" }}>Trigger keywords</p>
         <div className="flex flex-wrap gap-1.5">
@@ -441,11 +494,7 @@ export default function CalendarPage() {
               style={{ background: "rgba(99,102,241,0.2)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.35)" }}
             >
               {kw}
-              <button
-                onClick={() => toggleKeyword(kw)}
-                className="hover:opacity-70"
-                disabled={!warmupEnabled || !connected}
-              >
+              <button onClick={() => toggleKeyword(kw)} className="hover:opacity-70" disabled={!warmupEnabled || !connected}>
                 <X size={9} />
               </button>
             </span>
@@ -460,13 +509,7 @@ export default function CalendarPage() {
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomKw(); } }}
             placeholder="Add keyword…"
             className="flex-1 rounded-lg px-2 py-1 text-[11px] min-w-0"
-            style={{
-              background: "#1A1D2E",
-              border: "1px solid #2D3154",
-              color: "#F0F2FF",
-              outline: "none",
-              caretColor: "#6366F1",
-            }}
+            style={{ background: "#1A1D2E", border: "1px solid #2D3154", color: "#F0F2FF", outline: "none", caretColor: "#6366F1" }}
           />
           <button
             onClick={addCustomKw}
@@ -479,7 +522,6 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* Save button */}
       <div className="px-4 py-3">
         <button
           onClick={saveSettings}
@@ -491,7 +533,6 @@ export default function CalendarPage() {
         </button>
       </div>
 
-      {/* Status */}
       {connected && (
         <div className="px-4 pb-4 mt-auto">
           <div
@@ -504,9 +545,7 @@ export default function CalendarPage() {
               <ZapOff size={12} style={{ color: "#8B8FA8", flexShrink: 0 }} />
             )}
             <span className="text-[11px]" style={{ color: warmupEnabled ? "#818cf8" : "#8B8FA8" }}>
-              {warmupEnabled
-                ? `Warms up ${minutesBefore}m before events`
-                : "Warmup disabled"}
+              {warmupEnabled ? `Warms up ${minutesBefore}m before events` : "Warmup disabled"}
             </span>
           </div>
         </div>
@@ -514,207 +553,207 @@ export default function CalendarPage() {
     </>
   );
 
+  // ── Shared nav bar ────────────────────────────────────────────────────────
+
+  const navBar = (
+    <div
+      className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 shrink-0"
+      style={{ borderBottom: "1px solid #2D3154" }}
+    >
+      <span className="text-[13px] sm:text-[14px] font-semibold truncate min-w-0" style={{ color: "#F0F2FF" }}>
+        {fmtHeaderRange(Array.from({ length: 7 }, (_, i) => addDays(startDate, i)))}
+      </span>
+
+      <div className="flex items-center gap-1 ml-auto sm:ml-0">
+        <button
+          onClick={() => setStartDate(addDays(startDate, -step))}
+          className="w-7 h-7 flex items-center justify-center rounded-md"
+          style={{ background: "#1A1D2E", color: "#8B8FA8" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#1A1D2E")}
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <button
+          onClick={() => setStartDate(getMondayOf(new Date()))}
+          className="px-2.5 py-1 rounded-md text-[12px] font-medium"
+          style={{ background: "#1A1D2E", color: "#8B8FA8" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#1A1D2E")}
+        >
+          Today
+        </button>
+        <button
+          onClick={() => setStartDate(addDays(startDate, step))}
+          className="w-7 h-7 flex items-center justify-center rounded-md"
+          style={{ background: "#1A1D2E", color: "#8B8FA8" }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#1A1D2E")}
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+
+      {loading && (
+        <div
+          className="w-3.5 h-3.5 rounded-full animate-spin"
+          style={{ border: "2px solid #2D3154", borderTopColor: "#6366F1" }}
+        />
+      )}
+
+      {!connected && (
+        <span className="text-[11px] hidden sm:inline" style={{ color: "#8B8FA8" }}>
+          Calendar not connected
+        </span>
+      )}
+
+      <button
+        onClick={() => setShowSidebar(true)}
+        className="flex sm:hidden items-center justify-center w-8 h-8 rounded-lg"
+        style={{ background: "#1A1D2E", color: "#8B8FA8" }}
+      >
+        <Settings2 size={14} />
+      </button>
+    </div>
+  );
+
   return (
     <div className="flex h-full overflow-hidden" style={{ background: "#0F1117" }}>
-      {/* ── Left: calendar ── */}
-      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
-        {/* Week nav bar */}
-        <div
-          className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 shrink-0"
-          style={{ borderBottom: "1px solid #2D3154" }}
-        >
-          <span className="text-[13px] sm:text-[14px] font-semibold truncate min-w-0" style={{ color: "#F0F2FF" }}>
-            {fmtHeaderRange(days)}
-          </span>
-
-          <div className="flex items-center gap-1 ml-auto sm:ml-0">
-            <button
-              onClick={() => setStartDate(addDays(startDate, -daysToShow))}
-              className="w-7 h-7 flex items-center justify-center rounded-md"
-              style={{ background: "#1A1D2E", color: "#8B8FA8" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#1A1D2E")}
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={() => setStartDate(getStartForToday(daysToShow))}
-              className="px-2.5 py-1 rounded-md text-[12px] font-medium"
-              style={{ background: "#1A1D2E", color: "#8B8FA8" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#1A1D2E")}
-            >
-              Today
-            </button>
-            <button
-              onClick={() => setStartDate(addDays(startDate, daysToShow))}
-              className="w-7 h-7 flex items-center justify-center rounded-md"
-              style={{ background: "#1A1D2E", color: "#8B8FA8" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#1A1D2E")}
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-
-          {loading && (
-            <div
-              className="w-3.5 h-3.5 rounded-full animate-spin"
-              style={{ border: "2px solid #2D3154", borderTopColor: "#6366F1" }}
-            />
-          )}
-
-          {!connected && (
-            <span className="text-[11px] hidden sm:inline" style={{ color: "#8B8FA8" }}>
-              Calendar not connected
-            </span>
-          )}
-
-          {/* Settings button — mobile only */}
-          <button
-            onClick={() => setShowSidebar(true)}
-            className="flex sm:hidden items-center justify-center w-8 h-8 rounded-lg"
-            style={{ background: "#1A1D2E", color: "#8B8FA8" }}
-          >
-            <Settings2 size={14} />
-          </button>
-        </div>
-
-        {/* Day headers */}
-        <div
-          className="flex shrink-0"
-          style={{ borderBottom: "1px solid #2D3154", background: "#0F1117" }}
-        >
-          <div className="w-10 sm:w-14 shrink-0" />
-          {days.map((day, i) => {
-            const isToday = dateStr(day) === todayStr;
-            return (
-              <div
-                key={i}
-                className="flex-1 flex flex-col items-center py-2 gap-0.5"
-                style={{ borderLeft: "1px solid #1A1D2E" }}
-              >
-                <span
-                  className="text-[10px] uppercase tracking-wide font-medium"
-                  style={{ color: isToday ? "#6366F1" : "#8B8FA8" }}
-                >
-                  {DAY_LABELS[(day.getDay() + 6) % 7]}
-                </span>
-                <span
-                  className="text-[14px] font-bold w-7 h-7 flex items-center justify-center rounded-full"
-                  style={{
-                    background: isToday ? "#6366F1" : "transparent",
-                    color: isToday ? "#fff" : "#F0F2FF",
-                  }}
-                >
-                  {day.getDate()}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* All-day row */}
-        {hasAllDay && (
-          <div
-            className="flex shrink-0"
-            style={{ borderBottom: "1px solid #2D3154", minHeight: 28 }}
-          >
-            <div className="w-10 sm:w-14 shrink-0 flex items-center justify-end pr-2">
-              <span className="text-[9px] uppercase tracking-wide" style={{ color: "#8B8FA8" }}>
-                all‑day
-              </span>
-            </div>
-            {days.map((day, i) => (
-              <div
-                key={i}
-                className="flex-1 px-0.5 py-0.5 flex flex-col gap-0.5"
-                style={{ borderLeft: "1px solid #1A1D2E" }}
-              >
-                {allDayForDay(events, day).map((e) => (
-                  <div
-                    key={e.id}
-                    className="rounded px-1.5 text-[10px] font-medium truncate py-0.5"
-                    style={{ background: `${eventColor(e)}22`, color: eventColor(e) }}
-                  >
-                    {e.title}
-                  </div>
-                ))}
-              </div>
+      {/* ── Mobile stack view ── */}
+      {viewMode === "stack" && (
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          {navBar}
+          <div className="flex-1 overflow-y-auto pt-3 pb-6">
+            {Array.from({ length: 7 }, (_, i) => addDays(startDate, i)).map((day, i) => (
+              <StackDaySection key={i} day={day} events={events} todayStr={todayStr} />
             ))}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Time grid */}
-        <div className="flex-1 overflow-auto" ref={scrollRef}>
-          <div className="flex" style={{ height: TOTAL_PX, position: "relative" }}>
-            {/* Time labels */}
-            <div className="w-10 sm:w-14 shrink-0 relative select-none">
-              {HOURS.map((h) => (
-                <div
-                  key={h}
-                  className="absolute w-full flex items-start justify-end pr-1 sm:pr-2"
-                  style={{ top: (h - START_HOUR) * HOUR_PX - 8, height: HOUR_PX }}
-                >
-                  <span className="text-[9px] sm:text-[10px]" style={{ color: "#8B8FA8" }}>
-                    {fmtLabel(h)}
-                  </span>
-                </div>
-              ))}
-            </div>
+      {/* ── Desktop/tablet grid view ── */}
+      {viewMode === "grid" && (
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          {navBar}
 
-            {/* Day columns */}
+          {/* Day headers */}
+          <div
+            className="flex shrink-0"
+            style={{ borderBottom: "1px solid #2D3154", background: "#0F1117" }}
+          >
+            <div className="w-14 shrink-0" />
             {days.map((day, i) => {
               const isToday = dateStr(day) === todayStr;
-              const dayEvents = eventsForDay(events, day);
               return (
                 <div
                   key={i}
-                  className="flex-1 relative"
+                  className="flex-1 flex flex-col items-center py-2 gap-0.5"
                   style={{ borderLeft: "1px solid #1A1D2E" }}
                 >
-                  {HOURS.map((h) => (
-                    <div
-                      key={h}
-                      className="absolute w-full pointer-events-none"
-                      style={{
-                        top: (h - START_HOUR) * HOUR_PX,
-                        height: HOUR_PX,
-                        borderTop: `1px solid ${h % 2 === 0 ? "#1A1D2E" : "#141621"}`,
-                      }}
-                    />
-                  ))}
-
-                  {isToday && (
-                    <div
-                      className="absolute inset-0 pointer-events-none"
-                      style={{ background: "rgba(99,102,241,0.025)" }}
-                    />
-                  )}
-
-                  {isToday && showNow && (
-                    <div
-                      className="absolute left-0 right-0 flex items-center pointer-events-none"
-                      style={{ top: nowTop, zIndex: 5 }}
-                    >
-                      <div
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ background: "#EF4444", marginLeft: -4 }}
-                      />
-                      <div className="flex-1 h-px" style={{ background: "#EF4444", opacity: 0.6 }} />
-                    </div>
-                  )}
-
-                  {dayEvents.map((e) => (
-                    <EventBlock key={e.id} event={e} />
-                  ))}
+                  <span
+                    className="text-[10px] uppercase tracking-wide font-medium"
+                    style={{ color: isToday ? "#6366F1" : "#8B8FA8" }}
+                  >
+                    {DAY_LABELS[(day.getDay() + 6) % 7]}
+                  </span>
+                  <span
+                    className="text-[14px] font-bold w-7 h-7 flex items-center justify-center rounded-full"
+                    style={{
+                      background: isToday ? "#6366F1" : "transparent",
+                      color: isToday ? "#fff" : "#F0F2FF",
+                    }}
+                  >
+                    {day.getDate()}
+                  </span>
                 </div>
               );
             })}
           </div>
+
+          {/* All-day row */}
+          {hasAllDay && (
+            <div
+              className="flex shrink-0"
+              style={{ borderBottom: "1px solid #2D3154", minHeight: 28 }}
+            >
+              <div className="w-14 shrink-0 flex items-center justify-end pr-2">
+                <span className="text-[9px] uppercase tracking-wide" style={{ color: "#8B8FA8" }}>all‑day</span>
+              </div>
+              {days.map((day, i) => (
+                <div
+                  key={i}
+                  className="flex-1 px-0.5 py-0.5 flex flex-col gap-0.5"
+                  style={{ borderLeft: "1px solid #1A1D2E" }}
+                >
+                  {allDayForDay(events, day).map((e) => (
+                    <div
+                      key={e.id}
+                      className="rounded px-1.5 text-[10px] font-medium truncate py-0.5"
+                      style={{ background: `${eventColor(e)}22`, color: eventColor(e) }}
+                    >
+                      {e.title}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Time grid */}
+          <div className="flex-1 overflow-auto" ref={scrollRef}>
+            <div className="flex" style={{ height: TOTAL_PX, position: "relative" }}>
+              <div className="w-14 shrink-0 relative select-none">
+                {HOURS.map((h) => (
+                  <div
+                    key={h}
+                    className="absolute w-full flex items-start justify-end pr-2"
+                    style={{ top: (h - START_HOUR) * HOUR_PX - 8, height: HOUR_PX }}
+                  >
+                    <span className="text-[10px]" style={{ color: "#8B8FA8" }}>{fmtLabel(h)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {days.map((day, i) => {
+                const isToday = dateStr(day) === todayStr;
+                const dayEvents = eventsForDay(events, day);
+                return (
+                  <div key={i} className="flex-1 relative" style={{ borderLeft: "1px solid #1A1D2E" }}>
+                    {HOURS.map((h) => (
+                      <div
+                        key={h}
+                        className="absolute w-full pointer-events-none"
+                        style={{
+                          top: (h - START_HOUR) * HOUR_PX,
+                          height: HOUR_PX,
+                          borderTop: `1px solid ${h % 2 === 0 ? "#1A1D2E" : "#141621"}`,
+                        }}
+                      />
+                    ))}
+                    {isToday && (
+                      <div
+                        className="absolute inset-0 pointer-events-none"
+                        style={{ background: "rgba(99,102,241,0.025)" }}
+                      />
+                    )}
+                    {isToday && showNow && (
+                      <div
+                        className="absolute left-0 right-0 flex items-center pointer-events-none"
+                        style={{ top: nowTop, zIndex: 5 }}
+                      >
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: "#EF4444", marginLeft: -4 }} />
+                        <div className="flex-1 h-px" style={{ background: "#EF4444", opacity: 0.6 }} />
+                      </div>
+                    )}
+                    {dayEvents.map((e) => <EventBlock key={e.id} event={e} />)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Sidebar backdrop (mobile only) ── */}
       {showSidebar && (
@@ -729,9 +768,7 @@ export default function CalendarPage() {
       <div
         className={[
           "w-60 shrink-0 flex-col overflow-y-auto",
-          showSidebar
-            ? "flex fixed inset-y-0 right-0 z-40"
-            : "hidden sm:flex",
+          showSidebar ? "flex fixed inset-y-0 right-0 z-40" : "hidden sm:flex",
         ].join(" ")}
         style={{ borderLeft: "1px solid #2D3154", background: "#0B0D14" }}
       >
