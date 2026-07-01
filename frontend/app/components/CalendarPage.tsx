@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X, Zap, ZapOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings2, X, Zap, ZapOff } from "lucide-react";
 import {
   CalendarEvent,
   fetchCalendarEvents,
@@ -44,10 +44,6 @@ function addDays(d: Date, n: number): Date {
   return r;
 }
 
-function weekDays(monday: Date): Date[] {
-  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
-}
-
 function dateStr(d: Date): string {
   return d.toISOString().split("T")[0];
 }
@@ -58,15 +54,25 @@ function fmtLabel(h: number): string {
   return h > 12 ? `${h - 12}pm` : `${h}am`;
 }
 
-function fmtHeaderMonth(days: Date[]): string {
+function fmtHeaderRange(days: Date[]): string {
   const a = days[0];
-  const b = days[6];
+  const b = days[days.length - 1];
+  if (days.length === 1) {
+    return a.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }
   if (a.getMonth() === b.getMonth()) {
     return a.toLocaleDateString(undefined, { month: "long", year: "numeric" });
   }
   const am = a.toLocaleDateString(undefined, { month: "short" });
   const bm = b.toLocaleDateString(undefined, { month: "short", year: "numeric" });
   return `${am} – ${bm}`;
+}
+
+function getStartForToday(daysToShow: number): Date {
+  if (daysToShow === 7) return getMondayOf(new Date());
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
 function eventColor(e: CalendarEvent): string {
@@ -126,7 +132,6 @@ function EventPopover({
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose, anchorRef]);
 
-  // Position relative to anchor
   const [style, setStyle] = useState<React.CSSProperties>({ opacity: 0 });
   useEffect(() => {
     if (!anchorRef.current || !ref.current) return;
@@ -232,7 +237,23 @@ function EventBlock({ event }: { event: CalendarEvent }) {
 // ── CalendarPage ──────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
-  const [monday, setMonday] = useState(() => getMondayOf(new Date()));
+  const [daysToShow, setDaysToShow] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth < 640 ? 1 : window.innerWidth < 1024 ? 3 : 7;
+    }
+    return 7;
+  });
+
+  const [startDate, setStartDate] = useState(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    return getMondayOf(new Date());
+  });
+
+  const [showSidebar, setShowSidebar] = useState(false);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -242,7 +263,17 @@ export default function CalendarPage() {
   const [customKw, setCustomKw] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const days = weekDays(monday);
+  // Responsive day count
+  useEffect(() => {
+    function update() {
+      const w = window.innerWidth;
+      setDaysToShow(w < 640 ? 1 : w < 1024 ? 3 : 7);
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  const days = Array.from({ length: daysToShow }, (_, i) => addDays(startDate, i));
 
   const loadStatus = useCallback(async () => {
     try {
@@ -258,7 +289,7 @@ export default function CalendarPage() {
     setLoading(true);
     try {
       const start = days[0].toISOString();
-      const end = new Date(days[6].getTime() + 86399999).toISOString();
+      const end = new Date(days[days.length - 1].getTime() + 86399999).toISOString();
       const data = await fetchCalendarEvents(start, end);
       setEvents(data);
     } catch {
@@ -266,7 +297,7 @@ export default function CalendarPage() {
     } finally {
       setLoading(false);
     }
-  }, [monday]);
+  }, [startDate, daysToShow]);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
   useEffect(() => { loadEvents(); }, [loadEvents]);
@@ -314,6 +345,175 @@ export default function CalendarPage() {
 
   const hasAllDay = days.some((d) => allDayForDay(events, d).length > 0);
 
+  // ── Sidebar content (shared between inline and overlay) ──
+  const sidebarContent = (
+    <>
+      {/* Header with close on mobile */}
+      <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid #2D3154" }}>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "#8B8FA8" }}>
+            Pre-warm
+          </p>
+          <button
+            onClick={() => setShowSidebar(false)}
+            className="flex sm:hidden p-1 rounded hover:opacity-70"
+            style={{ color: "#8B8FA8" }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Toggle row */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[13px] font-medium" style={{ color: "#F0F2FF" }}>Auto warmup</p>
+            <p className="text-[11px] mt-0.5" style={{ color: "#8B8FA8" }}>
+              {warmupEnabled ? "Active before events" : "Disabled"}
+            </p>
+          </div>
+          <button
+            onClick={toggleWarmup}
+            disabled={!connected}
+            className="relative w-10 h-[22px] rounded-full transition-colors disabled:opacity-40"
+            style={{ background: warmupEnabled && connected ? "#6366F1" : "#2D3154" }}
+            title={connected ? undefined : "Calendar not connected"}
+          >
+            <span
+              className="absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200"
+              style={{ transform: warmupEnabled && connected ? "translateX(18px)" : "translateX(0)" }}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Minutes before */}
+      <div className="px-4 py-3" style={{ borderBottom: "1px solid #2D3154", opacity: warmupEnabled && connected ? 1 : 0.4 }}>
+        <p className="text-[11px] font-medium mb-2" style={{ color: "#8B8FA8" }}>
+          Warm up how early
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={5}
+            max={120}
+            value={minutesBefore}
+            disabled={!warmupEnabled || !connected}
+            onChange={(e) => setMinutesBefore(Number(e.target.value))}
+            className="w-16 rounded-lg px-2 py-1.5 text-[13px]"
+            style={{
+              background: "#1A1D2E",
+              border: "1px solid #2D3154",
+              color: "#F0F2FF",
+              outline: "none",
+              caretColor: "#6366F1",
+            }}
+          />
+          <span className="text-[12px]" style={{ color: "#8B8FA8" }}>min before</span>
+        </div>
+      </div>
+
+      {/* Keywords */}
+      <div className="px-4 py-3" style={{ borderBottom: "1px solid #2D3154", opacity: warmupEnabled && connected ? 1 : 0.4 }}>
+        <p className="text-[11px] font-medium mb-2" style={{ color: "#8B8FA8" }}>Trigger keywords</p>
+        <div className="flex flex-wrap gap-1.5">
+          {ALL_KEYWORDS.map((kw) => {
+            const on = keywords.includes(kw);
+            return (
+              <button
+                key={kw}
+                onClick={() => toggleKeyword(kw)}
+                disabled={!warmupEnabled || !connected}
+                className="px-2 py-0.5 rounded text-[11px] font-medium transition-colors"
+                style={{
+                  background: on ? "rgba(99,102,241,0.2)" : "#1A1D2E",
+                  color: on ? "#818cf8" : "#8B8FA8",
+                  border: `1px solid ${on ? "rgba(99,102,241,0.35)" : "transparent"}`,
+                }}
+              >
+                {kw}
+              </button>
+            );
+          })}
+          {keywords.filter((k) => !ALL_KEYWORDS.includes(k)).map((kw) => (
+            <span
+              key={kw}
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium"
+              style={{ background: "rgba(99,102,241,0.2)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.35)" }}
+            >
+              {kw}
+              <button
+                onClick={() => toggleKeyword(kw)}
+                className="hover:opacity-70"
+                disabled={!warmupEnabled || !connected}
+              >
+                <X size={9} />
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-1.5 mt-2">
+          <input
+            type="text"
+            value={customKw}
+            disabled={!warmupEnabled || !connected}
+            onChange={(e) => setCustomKw(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomKw(); } }}
+            placeholder="Add keyword…"
+            className="flex-1 rounded-lg px-2 py-1 text-[11px] min-w-0"
+            style={{
+              background: "#1A1D2E",
+              border: "1px solid #2D3154",
+              color: "#F0F2FF",
+              outline: "none",
+              caretColor: "#6366F1",
+            }}
+          />
+          <button
+            onClick={addCustomKw}
+            disabled={!customKw.trim() || !warmupEnabled || !connected}
+            className="px-2 py-1 rounded-lg text-[11px] font-medium disabled:opacity-40"
+            style={{ background: "#2D3154", color: "#8B8FA8" }}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/* Save button */}
+      <div className="px-4 py-3">
+        <button
+          onClick={saveSettings}
+          disabled={saving || !connected || keywords.length === 0}
+          className="w-full py-2 rounded-lg text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ background: "#6366F1" }}
+        >
+          {saving ? "Saving…" : "Save settings"}
+        </button>
+      </div>
+
+      {/* Status */}
+      {connected && (
+        <div className="px-4 pb-4 mt-auto">
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-lg"
+            style={{ background: warmupEnabled ? "rgba(99,102,241,0.08)" : "#1A1D2E" }}
+          >
+            {warmupEnabled ? (
+              <Zap size={12} style={{ color: "#6366F1", flexShrink: 0 }} />
+            ) : (
+              <ZapOff size={12} style={{ color: "#8B8FA8", flexShrink: 0 }} />
+            )}
+            <span className="text-[11px]" style={{ color: warmupEnabled ? "#818cf8" : "#8B8FA8" }}>
+              {warmupEnabled
+                ? `Warms up ${minutesBefore}m before events`
+                : "Warmup disabled"}
+            </span>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="flex h-full overflow-hidden" style={{ background: "#0F1117" }}>
       {/* ── Left: calendar ── */}
@@ -321,16 +521,16 @@ export default function CalendarPage() {
 
         {/* Week nav bar */}
         <div
-          className="flex items-center gap-3 px-5 py-3 shrink-0"
+          className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 shrink-0"
           style={{ borderBottom: "1px solid #2D3154" }}
         >
-          <span className="text-[14px] font-semibold" style={{ color: "#F0F2FF" }}>
-            {fmtHeaderMonth(days)}
+          <span className="text-[13px] sm:text-[14px] font-semibold truncate min-w-0" style={{ color: "#F0F2FF" }}>
+            {fmtHeaderRange(days)}
           </span>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 ml-auto sm:ml-0">
             <button
-              onClick={() => setMonday(addDays(monday, -7))}
+              onClick={() => setStartDate(addDays(startDate, -daysToShow))}
               className="w-7 h-7 flex items-center justify-center rounded-md"
               style={{ background: "#1A1D2E", color: "#8B8FA8" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
@@ -339,7 +539,7 @@ export default function CalendarPage() {
               <ChevronLeft size={14} />
             </button>
             <button
-              onClick={() => setMonday(getMondayOf(new Date()))}
+              onClick={() => setStartDate(getStartForToday(daysToShow))}
               className="px-2.5 py-1 rounded-md text-[12px] font-medium"
               style={{ background: "#1A1D2E", color: "#8B8FA8" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
@@ -348,7 +548,7 @@ export default function CalendarPage() {
               Today
             </button>
             <button
-              onClick={() => setMonday(addDays(monday, 7))}
+              onClick={() => setStartDate(addDays(startDate, daysToShow))}
               className="w-7 h-7 flex items-center justify-center rounded-md"
               style={{ background: "#1A1D2E", color: "#8B8FA8" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "#2D3154")}
@@ -360,16 +560,25 @@ export default function CalendarPage() {
 
           {loading && (
             <div
-              className="w-3.5 h-3.5 rounded-full animate-spin ml-1"
+              className="w-3.5 h-3.5 rounded-full animate-spin"
               style={{ border: "2px solid #2D3154", borderTopColor: "#6366F1" }}
             />
           )}
 
           {!connected && (
-            <span className="text-[12px]" style={{ color: "#8B8FA8" }}>
+            <span className="text-[11px] hidden sm:inline" style={{ color: "#8B8FA8" }}>
               Calendar not connected
             </span>
           )}
+
+          {/* Settings button — mobile only */}
+          <button
+            onClick={() => setShowSidebar(true)}
+            className="flex sm:hidden items-center justify-center w-8 h-8 rounded-lg"
+            style={{ background: "#1A1D2E", color: "#8B8FA8" }}
+          >
+            <Settings2 size={14} />
+          </button>
         </div>
 
         {/* Day headers */}
@@ -377,7 +586,7 @@ export default function CalendarPage() {
           className="flex shrink-0"
           style={{ borderBottom: "1px solid #2D3154", background: "#0F1117" }}
         >
-          <div className="w-14 shrink-0" />
+          <div className="w-10 sm:w-14 shrink-0" />
           {days.map((day, i) => {
             const isToday = dateStr(day) === todayStr;
             return (
@@ -412,9 +621,7 @@ export default function CalendarPage() {
             className="flex shrink-0"
             style={{ borderBottom: "1px solid #2D3154", minHeight: 28 }}
           >
-            <div
-              className="w-14 shrink-0 flex items-center justify-end pr-2"
-            >
+            <div className="w-10 sm:w-14 shrink-0 flex items-center justify-end pr-2">
               <span className="text-[9px] uppercase tracking-wide" style={{ color: "#8B8FA8" }}>
                 all‑day
               </span>
@@ -443,14 +650,14 @@ export default function CalendarPage() {
         <div className="flex-1 overflow-auto" ref={scrollRef}>
           <div className="flex" style={{ height: TOTAL_PX, position: "relative" }}>
             {/* Time labels */}
-            <div className="w-14 shrink-0 relative select-none">
+            <div className="w-10 sm:w-14 shrink-0 relative select-none">
               {HOURS.map((h) => (
                 <div
                   key={h}
-                  className="absolute w-full flex items-start justify-end pr-2"
+                  className="absolute w-full flex items-start justify-end pr-1 sm:pr-2"
                   style={{ top: (h - START_HOUR) * HOUR_PX - 8, height: HOUR_PX }}
                 >
-                  <span className="text-[10px]" style={{ color: "#8B8FA8" }}>
+                  <span className="text-[9px] sm:text-[10px]" style={{ color: "#8B8FA8" }}>
                     {fmtLabel(h)}
                   </span>
                 </div>
@@ -467,7 +674,6 @@ export default function CalendarPage() {
                   className="flex-1 relative"
                   style={{ borderLeft: "1px solid #1A1D2E" }}
                 >
-                  {/* Hour lines */}
                   {HOURS.map((h) => (
                     <div
                       key={h}
@@ -480,7 +686,6 @@ export default function CalendarPage() {
                     />
                   ))}
 
-                  {/* Today highlight */}
                   {isToday && (
                     <div
                       className="absolute inset-0 pointer-events-none"
@@ -488,7 +693,6 @@ export default function CalendarPage() {
                     />
                   )}
 
-                  {/* Now line */}
                   {isToday && showNow && (
                     <div
                       className="absolute left-0 right-0 flex items-center pointer-events-none"
@@ -502,7 +706,6 @@ export default function CalendarPage() {
                     </div>
                   )}
 
-                  {/* Events */}
                   {dayEvents.map((e) => (
                     <EventBlock key={e.id} event={e} />
                   ))}
@@ -513,165 +716,26 @@ export default function CalendarPage() {
         </div>
       </div>
 
-      {/* ── Right: settings sidebar ── */}
+      {/* ── Sidebar backdrop (mobile only) ── */}
+      {showSidebar && (
+        <div
+          className="fixed inset-0 z-30 sm:hidden"
+          style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+
+      {/* ── Settings sidebar ── */}
       <div
-        className="w-60 shrink-0 flex flex-col overflow-y-auto"
+        className={[
+          "w-60 shrink-0 flex-col overflow-y-auto",
+          showSidebar
+            ? "flex fixed inset-y-0 right-0 z-40"
+            : "hidden sm:flex",
+        ].join(" ")}
         style={{ borderLeft: "1px solid #2D3154", background: "#0B0D14" }}
       >
-        {/* Warmup header */}
-        <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid #2D3154" }}>
-          <p className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: "#8B8FA8" }}>
-            Pre-warm
-          </p>
-
-          {/* Toggle row */}
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[13px] font-medium" style={{ color: "#F0F2FF" }}>Auto warmup</p>
-              <p className="text-[11px] mt-0.5" style={{ color: "#8B8FA8" }}>
-                {warmupEnabled ? "Active before events" : "Disabled"}
-              </p>
-            </div>
-            <button
-              onClick={toggleWarmup}
-              disabled={!connected}
-              className="relative w-10 h-[22px] rounded-full transition-colors disabled:opacity-40"
-              style={{ background: warmupEnabled && connected ? "#6366F1" : "#2D3154" }}
-              title={connected ? undefined : "Calendar not connected"}
-            >
-              <span
-                className="absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white transition-transform duration-200"
-                style={{ transform: warmupEnabled && connected ? "translateX(18px)" : "translateX(0)" }}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* Minutes before */}
-        <div className="px-4 py-3" style={{ borderBottom: "1px solid #2D3154", opacity: warmupEnabled && connected ? 1 : 0.4 }}>
-          <p className="text-[11px] font-medium mb-2" style={{ color: "#8B8FA8" }}>
-            Warm up how early
-          </p>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={5}
-              max={120}
-              value={minutesBefore}
-              disabled={!warmupEnabled || !connected}
-              onChange={(e) => setMinutesBefore(Number(e.target.value))}
-              className="w-16 rounded-lg px-2 py-1.5 text-[13px]"
-              style={{
-                background: "#1A1D2E",
-                border: "1px solid #2D3154",
-                color: "#F0F2FF",
-                outline: "none",
-                caretColor: "#6366F1",
-              }}
-            />
-            <span className="text-[12px]" style={{ color: "#8B8FA8" }}>min before</span>
-          </div>
-        </div>
-
-        {/* Keywords */}
-        <div className="px-4 py-3" style={{ borderBottom: "1px solid #2D3154", opacity: warmupEnabled && connected ? 1 : 0.4 }}>
-          <p className="text-[11px] font-medium mb-2" style={{ color: "#8B8FA8" }}>Trigger keywords</p>
-          <div className="flex flex-wrap gap-1.5">
-            {ALL_KEYWORDS.map((kw) => {
-              const on = keywords.includes(kw);
-              return (
-                <button
-                  key={kw}
-                  onClick={() => toggleKeyword(kw)}
-                  disabled={!warmupEnabled || !connected}
-                  className="px-2 py-0.5 rounded text-[11px] font-medium transition-colors"
-                  style={{
-                    background: on ? "rgba(99,102,241,0.2)" : "#1A1D2E",
-                    color: on ? "#818cf8" : "#8B8FA8",
-                    border: `1px solid ${on ? "rgba(99,102,241,0.35)" : "transparent"}`,
-                  }}
-                >
-                  {kw}
-                </button>
-              );
-            })}
-            {keywords.filter((k) => !ALL_KEYWORDS.includes(k)).map((kw) => (
-              <span
-                key={kw}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium"
-                style={{ background: "rgba(99,102,241,0.2)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.35)" }}
-              >
-                {kw}
-                <button
-                  onClick={() => toggleKeyword(kw)}
-                  className="hover:opacity-70"
-                  disabled={!warmupEnabled || !connected}
-                >
-                  <X size={9} />
-                </button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-1.5 mt-2">
-            <input
-              type="text"
-              value={customKw}
-              disabled={!warmupEnabled || !connected}
-              onChange={(e) => setCustomKw(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCustomKw(); } }}
-              placeholder="Add keyword…"
-              className="flex-1 rounded-lg px-2 py-1 text-[11px] min-w-0"
-              style={{
-                background: "#1A1D2E",
-                border: "1px solid #2D3154",
-                color: "#F0F2FF",
-                outline: "none",
-                caretColor: "#6366F1",
-              }}
-            />
-            <button
-              onClick={addCustomKw}
-              disabled={!customKw.trim() || !warmupEnabled || !connected}
-              className="px-2 py-1 rounded-lg text-[11px] font-medium disabled:opacity-40"
-              style={{ background: "#2D3154", color: "#8B8FA8" }}
-            >
-              Add
-            </button>
-          </div>
-        </div>
-
-        {/* Save button */}
-        <div className="px-4 py-3">
-          <button
-            onClick={saveSettings}
-            disabled={saving || !connected || keywords.length === 0}
-            className="w-full py-2 rounded-lg text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-            style={{ background: "#6366F1" }}
-          >
-            {saving ? "Saving…" : "Save settings"}
-          </button>
-        </div>
-
-        {/* Status */}
-        {connected && (
-          <div className="px-4 pb-4 mt-auto">
-            <div
-              className="flex items-center gap-2 px-3 py-2 rounded-lg"
-              style={{ background: warmupEnabled ? "rgba(99,102,241,0.08)" : "#1A1D2E" }}
-            >
-              {warmupEnabled ? (
-                <Zap size={12} style={{ color: "#6366F1", flexShrink: 0 }} />
-              ) : (
-                <ZapOff size={12} style={{ color: "#8B8FA8", flexShrink: 0 }} />
-              )}
-              <span className="text-[11px]" style={{ color: warmupEnabled ? "#818cf8" : "#8B8FA8" }}>
-                {warmupEnabled
-                  ? `Warms up ${minutesBefore}m before events`
-                  : "Warmup disabled"}
-              </span>
-            </div>
-          </div>
-        )}
+        {sidebarContent}
       </div>
     </div>
   );

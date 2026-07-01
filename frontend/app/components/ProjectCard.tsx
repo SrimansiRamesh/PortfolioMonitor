@@ -68,7 +68,6 @@ export default function ProjectCard({ project, onDeleted, onRestarted, onEdited 
           background: "#1A1D2E",
           border: "1px solid #2D3154",
           borderLeft: `3px solid ${accentBorder}`,
-          minHeight: 280,
         }}
         onClick={() => setShowEditModal(true)}
       >

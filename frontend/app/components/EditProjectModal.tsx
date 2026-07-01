@@ -81,7 +81,7 @@ export default function EditProjectModal({ open, project, onClose, onUpdated }: 
     >
       <div className="absolute inset-0 backdrop-blur-sm" style={{ background: "rgba(0,0,0,0.6)" }} />
       <div
-        className="relative rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6"
+        className="relative rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 max-h-[90vh] overflow-y-auto"
         style={{ background: "#1A1D2E", border: "1px solid #2D3154" }}
       >
         <div className="flex items-center justify-between mb-5">

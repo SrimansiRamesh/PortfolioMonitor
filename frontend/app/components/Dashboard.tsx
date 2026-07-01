@@ -94,7 +94,7 @@ export default function Dashboard() {
         className="sticky top-0 z-10"
         style={{ background: "#0F1117", borderBottom: "1px solid #2D3154" }}
       >
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center gap-6">
+        <div className="max-w-5xl mx-auto px-3 sm:px-6 py-3 sm:py-4 flex items-center gap-2 sm:gap-4">
           <button
             onClick={() => setView("projects")}
             className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
@@ -111,7 +111,7 @@ export default function Dashboard() {
           </button>
 
           {!loading && projects.length > 0 && (
-            <div className="flex items-center gap-5 text-[13px]">
+            <div className="hidden sm:flex items-center gap-5 text-[13px]">
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: "#10B981" }} />
                 <span className="font-semibold" style={{ color: "#10B981" }}>{counts.healthy}</span>
@@ -141,14 +141,14 @@ export default function Dashboard() {
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md text-[12px] font-medium transition-colors"
                 style={{
                   background: view === v ? "#2D3154" : "transparent",
                   color: view === v ? "#F0F2FF" : "#8B8FA8",
                 }}
               >
                 {v === "projects" ? <LayoutGrid size={13} /> : <Calendar size={13} />}
-                {v === "projects" ? "Projects" : "Calendar"}
+                <span className="hidden sm:inline">{v === "projects" ? "Projects" : "Calendar"}</span>
               </button>
             ))}
           </div>
@@ -156,11 +156,11 @@ export default function Dashboard() {
           {view === "projects" && (
             <button
               onClick={() => setModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 sm:px-3.5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
               style={{ background: "#6366F1" }}
             >
               <Plus size={15} />
-              Add
+              <span className="hidden sm:inline">Add</span>
             </button>
           )}
 
@@ -193,11 +193,11 @@ export default function Dashboard() {
 
       {/* Content */}
       {view === "calendar" ? (
-        <div style={{ height: "calc(100vh - 65px)" }}>
+        <div style={{ height: "calc(100vh - 57px)" }}>
           <CalendarPage />
         </div>
       ) : (
-        <main className="max-w-5xl mx-auto px-6 py-8">
+        <main className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
           {loading ? (
             <div className="flex items-center justify-center py-24">
               <div
