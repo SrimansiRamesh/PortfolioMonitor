@@ -17,13 +17,16 @@ app = FastAPI(title="portfolio-monitor")
 
 from app.config import settings
 
-_origins = ["http://localhost:3000"]
-if settings.FRONTEND_URL and settings.FRONTEND_URL not in _origins:
-    _origins.append(settings.FRONTEND_URL)
+_origins = ["http://localhost:3000", "http://localhost:3001"]
+for _url in [settings.FRONTEND_URL, settings.API_BASE_URL]:
+    _url = (_url or "").rstrip("/")
+    if _url and _url not in _origins:
+        _origins.append(_url)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -37,7 +40,7 @@ app.include_router(calendar.router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "allowed_origins": _origins}
 
 
 @app.on_event("startup")
